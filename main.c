@@ -1,6 +1,42 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+typedef struct ConditionCodes {
+    uint8_t z:1;
+    uint8_t s:1;
+    uint8_t p:1;
+    uint8_t cy:1;
+    uint8_t ac:1;
+    uint8_t pad:3;
+} ConditionCodes;
+
+typedef struct State8080 {
+    uint8_t a;
+    uint8_t b;
+    uint8_t c;
+    uint8_t d;
+    uint8_t e;
+    uint8_t h;
+    uint8_t l;
+    uint16_t sp;
+    uint16_t pc;
+    uint8_t *memory;
+    struct ConditionCodes cc;
+    uint8_t int_enable;
+} State8080;
+
+int parity(int x, int size) {
+    int i;
+    int p = 0;
+    x = (x & ((1<<size)-1));
+    for (i=0; i<size; i++) {
+        if (x & 0x1) p++;
+        x = x >> 1;
+    }
+
+    return (0 == (p & 0x1));
+}
+
 int Disassemble8080Op(unsigned char *codebuffer, int pc) {
     unsigned char *code = &codebuffer[pc];
     int opbytes = 1;
@@ -29,6 +65,7 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         case 0x0D: printf("DCR    C"); break; // Decrement C
         case 0x0E: printf("MVI    C,#$%02x", code[1]); opbytes=2; break; // Move byte 2 -> C
         case 0x0F: printf("RRC"); break; // Rotate A right
+
         case 0x10: printf("NOP"); break; // No operation
         case 0x11: printf("LXI    D,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Load immediate register Pair D & E
         case 0x12: printf("STAX    D"); break; // Store A indirect
@@ -45,9 +82,10 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         case 0x1D: printf("DCR    E"); break; // Decrement E register
         case 0x1E: printf("MVI    E,#$%02x", code[1]); opbytes=2; break; // Move byte 2 -> E
         case 0x1F: printf("RAR"); break; // Rotate A right through carry
+
         case 0x20: printf("NOP"); break; // No operation
         case 0x21: printf("LXI    H,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Load immediate register Pair H & L
-        case 0x22: printf("SHLD,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Store register Pair H & L to memory
+        case 0x22: printf("SHLD    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Store register Pair H & L to memory
         case 0x23: printf("INX    H"); break; // Increment H & L registers
         case 0x24: printf("INR    H"); break; // Increment H register
         case 0x25: printf("DCR    H"); break; // Decrement H register
@@ -55,15 +93,16 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         case 0x27: printf("DAA"); break; // Decimal Adjust accumulator
         case 0x28: printf("NOP"); break; // No operation
         case 0x29: printf("DAD    H"); break; // Add H & L to H & L
-        case 0x2A: printf("LHLD,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Load H & L registers to memory
+        case 0x2A: printf("LHLD    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Load H & L registers to memory
         case 0x2B: printf("DCX   H"); break; // Decrement H register
         case 0x2C: printf("INR    L"); break; // Increment L
         case 0x2D: printf("DCR    L"); break; // Decrement L
         case 0x2E: printf("MVI    L,#$%02x", code[1]); opbytes=2; break; // Move byte 2 -> L
         case 0x2F: printf("CMA"); break; // Compliment A
+
         case 0x30: printf("NOP"); break; // No operation
         case 0x31: printf("LXI    SP,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Load immediate register Stack pointer
-        case 0x32: printf("STA,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Store register A direct to memory
+        case 0x32: printf("STA    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Store register A direct to memory
         case 0x33: printf("INX    SP"); break; // Increment Stack Pointer
         case 0x34: printf("INR    M"); break; // Increment  (HL+1)
         case 0x35: printf("DCR    M"); break; // Decrement  (HL+1)
@@ -71,12 +110,13 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         case 0x37: printf("STC"); break; // Set carry flag
         case 0x38: printf("NOP"); break; // No operation
         case 0x39: printf("DAD    SP"); break; // Add stack pointer to H & L
-        case 0x3A: printf("LDA,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Load A from  (HL)
+        case 0x3A: printf("LDA    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Load A from  (HL)
         case 0x3B: printf("DCX    SP"); break; // Decrement stack pointer
         case 0x3C: printf("INR    A"); break; // Increment A
         case 0x3D: printf("DCR    A"); break; // Decrement A
         case 0x3E: printf("MVI    A,#$%02x", code[1]); opbytes=2; break; // Move byte 2 -> A
         case 0x3F: printf("CMC"); break; // Compliment carry flag
+
         case 0x40: printf("MOV    B,B"); break; // B -> B
         case 0x41: printf("MOV    B,C"); break; // B -> C
         case 0x42: printf("MOV    B,D"); break; // B -> D
@@ -93,6 +133,7 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         case 0x4D: printf("MOV    C,L"); break; // C -> L
         case 0x4E: printf("MOV    C,M"); break; // C ->  (HL)
         case 0x4F: printf("MOV    C,A"); break; // C -> A
+
         case 0x50: printf("MOV    D,B"); break; // D -> B
         case 0x51: printf("MOV    D,C"); break; // D -> C
         case 0x52: printf("MOV    D,D"); break; // D -> D
@@ -109,6 +150,7 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         case 0x5D: printf("MOV    E,L"); break; // E -> L
         case 0x5E: printf("MOV    E,M"); break; // E ->  (HL)
         case 0x5F: printf("MOV    E,A"); break; // E -> A
+
         case 0x60: printf("MOV    H,B"); break; // H -> B
         case 0x61: printf("MOV    H,C"); break; // H -> C
         case 0x62: printf("MOV    H,D"); break; // H -> D
@@ -125,6 +167,7 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         case 0x6D: printf("MOV    L,L"); break; // L -> L
         case 0x6E: printf("MOV    L,M"); break; // L ->  (HL)
         case 0x6F: printf("MOV    L,A"); break; // L -> A
+
         case 0x70: printf("MOV    M,B"); break; //  (HL) -> B
         case 0x71: printf("MOV    M,C"); break; //  (HL) -> C
         case 0x72: printf("MOV    M,D"); break; //  (HL) -> D
@@ -141,6 +184,7 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         case 0x7D: printf("MOV    A,L"); break; // A -> L
         case 0x7E: printf("MOV    A,M"); break; // A ->  (HL)
         case 0x7F: printf("MOV    A,A"); break; // A -> A
+
         case 0x80: printf("ADD    B"); break; // A -> A + B
         case 0x81: printf("ADD    C"); break; // A -> A + C
         case 0x82: printf("ADD    D"); break; // A -> A + D
@@ -157,6 +201,7 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         case 0x8D: printf("ADC    L"); break; // A -> A + L w/ carry
         case 0x8E: printf("ADC    M"); break; // A -> A +  (HL) w/ carry
         case 0x8F: printf("ADC    A"); break; // A -> A + A w/ carry
+
         case 0x90: printf("SUB    B"); break; // A -> A - B
         case 0x91: printf("SUB    C"); break; // A -> A - C
         case 0x92: printf("SUB    D"); break; // A -> A - D
@@ -173,6 +218,7 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         case 0x9D: printf("SBB    L"); break; // A -> A - L w/ carry
         case 0x9E: printf("SBB    M"); break; // A -> A -  (HL) w/ carry
         case 0x9F: printf("SBB    A"); break; // A -> A - A w/ carry
+
         case 0xA0: printf("ANA    B"); break; // A & B
         case 0xA1: printf("ANA    C"); break; // A & C
         case 0xA2: printf("ANA    D"); break; // A & D
@@ -189,6 +235,7 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         case 0xAD: printf("XRA    L"); break; // A ^ L
         case 0xAE: printf("XRA    M"); break; // A ^ (HL)
         case 0xAF: printf("XRA    A"); break; // A ^ A
+
         case 0xB0: printf("ORA    B"); break; // A | B
         case 0xB1: printf("ORA    C"); break; // A | C
         case 0xB2: printf("ORA    D"); break; // A | D
@@ -217,16 +264,17 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         case 0xBD: printf("CMP    L"); break;
         case 0xBE: printf("CMP    M"); break;
         case 0xBF: printf("CMP    A"); break;
+
         /* Return if Not Zero : If the Zero bit is zero, a return operation is performed */
         case 0xC0: printf("RNZ"); break;
         case 0xC1: printf("POP    B"); break; // Pop register Pair B & C off stack
         /* Jump if Not Zero : If the Zero bit is zero, program execution continues at the memory address */
-        case 0xC2: printf("JNZ,#$%02x%02x", code[2], code[1]); opbytes=3; break;
-        case 0xC3: printf("JMP,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump to memory address
+        case 0xC2: printf("JNZ    #$%02x%02x", code[2], code[1]); opbytes=3; break;
+        case 0xC3: printf("JMP    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump to memory address
         /* Call if Not Zero : If the Zero bit is one, a call operation is performed to subroutine */
-        case 0xC4: printf("CNZ,#$%02x%02x", code[2], code[1]); opbytes=3; break;
+        case 0xC4: printf("CNZ    #$%02x%02x", code[2], code[1]); opbytes=3; break;
         case 0xC5: printf("PUSH    B"); break; // Push register Pair B & C on stack
-        case 0xC6: printf("ADI,#$%02x", code[1]); opbytes=2; break; // A -> A + byte
+        case 0xC6: printf("ADI    #$%02x", code[1]); opbytes=2; break; // A -> A + byte
         /*
          * RST - The contents of the program counter
          * are pushed onto the stack, providing a return address for
@@ -236,33 +284,35 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
         /* Return if Zero : If the Zero bit is one, a return operation is performed */
         case 0xC8: printf("RZ"); break;
         case 0xC9: printf("RET"); break; // Unconditional return from subroutine
-        case 0xCA: printf("JZ,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump if Zero
-        case 0xCB: printf("JMP,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump to memory address
-        case 0xCC: printf("CZ,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if Zero
-        case 0xCD: printf("CALL,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Call address
-        case 0xCE: printf("ACI,#$%02x", code[1]); opbytes=2; break; // A -> A + byte w/ carry
+        case 0xCA: printf("JZ    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump if Zero
+        case 0xCB: printf("JMP    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump to memory address
+        case 0xCC: printf("CZ    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if Zero
+        case 0xCD: printf("CALL    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Call address
+        case 0xCE: printf("ACI    #$%02x", code[1]); opbytes=2; break; // A -> A + byte w/ carry
         case 0xCF: printf("RST"); break; // Restart
+
         /* Return if No Carry - If the carry bit is zero, a return operation is performed */
         case 0xD0: printf("RNC"); break;
         case 0xD1: printf("POP    D"); break; // Pop register Pair D & E off stack
-        case 0xD2: printf("JNC,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump if No Carry
-        case 0xD3: printf("OUT,#$%02x", code[1]); opbytes=2; break; // Write A to Output Port
-        case 0xD4: printf("CNC,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if No Carry
+        case 0xD2: printf("JNC    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump if No Carry
+        case 0xD3: printf("OUT    #$%02x", code[1]); opbytes=2; break; // Write A to Output Port
+        case 0xD4: printf("CNC    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if No Carry
         case 0xD5: printf("PUSH    D"); break; // Push register Pair D & E on stack
-        case 0xD6: printf("SUI,#$%02x", code[1]); opbytes=2; break; // A -> A - byte
+        case 0xD6: printf("SUI    #$%02x", code[1]); opbytes=2; break; // A -> A - byte
         case 0xD7: printf("RST"); break; // Restart
         case 0xD8: printf("RC"); break; // Return if Carry
         case 0xD9: printf("RET"); break; // Unconditional return from subroutine
-        case 0xDA: printf("JC,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump if Carry
-        case 0xDB: printf("IN,#$%02x", code[1]); opbytes=2; break; // Write Input Port to A
-        case 0xDC: printf("CC,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if Carry
-        case 0xDD: printf("CALL,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Call address
-        case 0xDE: printf("ACI,#$%02x", code[1]); opbytes=2; break; // A -> A - byte w/ borrow
+        case 0xDA: printf("JC    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump if Carry
+        case 0xDB: printf("IN    #$%02x", code[1]); opbytes=2; break; // Write Input Port to A
+        case 0xDC: printf("CC    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if Carry
+        case 0xDD: printf("CALL    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Call address
+        case 0xDE: printf("ACI    #$%02x", code[1]); opbytes=2; break; // A -> A - byte w/ borrow
         case 0xDF: printf("RST"); break; // Restart
+
         /* Return if Parity Odd - If the Parity bit is zero (indicating odd parity), a return operation is performed */
         case 0xE0: printf("RPO"); break;
         case 0xE1: printf("POP    H"); break; // Pop register Pair H & L off stack
-        case 0xE2: printf("JNC,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump if Parity Odd
+        case 0xE2: printf("JNC    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump if Parity Odd
         /*
          * Exchange Stack - The contents of the L register are exchanged
          * with the contents of the memory byte whose address
@@ -272,9 +322,9 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
          * pointer
          */
         case 0xE3: printf("XTHL"); break;
-        case 0xE4: printf("CPO,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if Parity Odd
+        case 0xE4: printf("CPO    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if Parity Odd
         case 0xE5: printf("PUSH    H"); break; // Push register Pair H & L on stack
-        case 0xE6: printf("ANI,#$%02x", code[1]); opbytes=2; break; // A -> A + byte
+        case 0xE6: printf("ANI    #$%02x", code[1]); opbytes=2; break; // A -> A & byte
         case 0xE7: printf("RST"); break; // Restart
         case 0xE8: printf("RPE"); break; // Return if Parity Even
         /*
@@ -292,10 +342,11 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
          * D and E registers
          */
         case 0xEB: printf("XCHG"); break;
-        case 0xEC: printf("CC,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if Parity Even
-        case 0xED: printf("CALL,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Call address
-        case 0xEE: printf("XRI,#$%02x", code[1]); opbytes=2; break; // A ^ byte
+        case 0xEC: printf("CC    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if Parity Even
+        case 0xED: printf("CALL    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Call address
+        case 0xEE: printf("XRI    #$%02x", code[1]); opbytes=2; break; // A ^ byte
         case 0xEF: printf("RST"); break; // Restart
+
         case 0xF0: printf("RP"); break; // Return on Positive
         /*
          * Register pair PSW (Program Status Word) refers to register
@@ -303,23 +354,132 @@ int Disassemble8080Op(unsigned char *codebuffer, int pc) {
          * the machine flags
          */
         case 0xF1: printf("POP    PSW"); break; // Pop A and Flags off stack
-        case 0xF2: printf("JP,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump if Positive
+        case 0xF2: printf("JP    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump if Positive
         case 0xF3: printf("DI"); break; // Disable Interrupt
-        case 0xF4: printf("CP,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if Positive
+        case 0xF4: printf("CP    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if Positive
         case 0xF5: printf("PUSH    PSW"); break; // Push A and Flags on stack
-        case 0xF6: printf("ORI,#$%02x", code[1]); opbytes=2; break; // A -> A | byte
+        case 0xF6: printf("ORI    #$%02x", code[1]); opbytes=2; break; // A -> A | byte
         case 0xF7: printf("RST"); break; // Restart
         case 0xF8: printf("RM"); break; // Return on Minus
         case 0xF9: printf("SPHL"); break; // Load Stack Pointer from H & L
-        case 0xFA: printf("JM,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump if Minus
+        case 0xFA: printf("JM    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Jump if Minus
         case 0xFB: printf("EI"); break; // Enable Interrupts
-        case 0xFC: printf("CM,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if Minus
-        case 0xFD: printf("CALL,#$%02x%02x", code[2], code[1]); opbytes=3; break; // Call address
-        case 0xFE: printf("CPI,#$%02x", code[1]); opbytes=2; break; // A compared with byte
+        case 0xFC: printf("CM    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Call if Minus
+        case 0xFD: printf("CALL    #$%02x%02x", code[2], code[1]); opbytes=3; break; // Call address
+        case 0xFE: printf("CPI     #$%02x", code[1]); opbytes=2; break; // A compared with byte
         case 0xFF: printf("RST"); break; // Restart
     }
     printf("\n");
     return opbytes;
+}
+
+void UnimplementedInstruction(State8080* state) {
+    //pc will have advanced one, so undo that
+    printf("Error: Unimplemented instruction\n");
+    state->pc--;
+    Disassemble8080Op(state->memory, state->pc);
+    exit(1);
+}
+
+int Emulate8080p(State8080* state) {
+    unsigned char *opcode = &state->memory[state->pc];
+
+    switch(*opcode) {
+        case 0x00: break; // NOP
+        case 0x01: // LXI B
+            state->c = opcode[1];
+            state->b = opcode[2];
+            state->pc += 2;
+            break;
+        case 0x02: // STAX B
+            state->a = state->b;
+            break;
+        case 0x03: // INX B
+            state->c++;
+            if (state->c == 0) {
+                state->b++;
+            }
+            break;
+        case 0x0F: { // RRC
+            uint8_t x = state->a;
+            state->a = ((x & 1) << 7) | (x >> 1);
+            state->cc.cy = (1 == (x & 1));
+        } break;
+        case 0x1F: { // RAR
+            uint8_t x = state->a;
+            state->a = ((state->cc.cy) << 7) | (x >> 1);
+            state->cc.cy = (1 == (x & 1));
+        }
+        case 0x2F: //CMA
+            state->a = ~state->a;
+            break;
+        case 0x80: { // ADD B
+            uint16_t a = (u_int16_t) state->a + (uint16_t) state->b;
+            state->cc.z = ((a & 0xff) == 0);
+            state->cc.s = ((a & 0x80) != 0);
+            state->cc.cy = (a > 0xff);
+            state->cc.p = parity(a & 0xff, 8);
+            state->a = a & 0xff;
+        } break;
+        case 0x81: { // ADD C
+            uint16_t a = (u_int16_t) state->a + (uint16_t) state->c;
+            state->cc.z = ((a & 0xff) == 0);
+            state->cc.s = ((a & 0x80) != 0);
+            state->cc.cy = (a > 0xff);
+            state->cc.p = parity(a & 0xff, 8);
+            state->a = a & 0xff;
+        } break;
+        case 0x86: { // ADD M
+            uint16_t offset = (state->h<<8) | (state->l);
+            uint16_t a = (u_int16_t) state->a + (uint16_t) state->memory[offset];
+            state->cc.z = ((a & 0xff) == 0);
+            state->cc.s = ((a & 0x80) != 0);
+            state->cc.cy = (a > 0xff);
+            state->cc.p = parity(a & 0xff, 8);
+            state->a = a & 0xff;
+        } break;
+        case 0xC2: // JNZ address
+            if (state->cc.z == 0) {
+                state->pc = (opcode[2] << 8) | opcode[1];
+            } else {
+                state->pc += 2;
+            }
+            break;
+        case 0xC3: // JMP address
+            state->pc = (opcode[2] << 8) | opcode[1];
+            break;
+        case 0xC6: { // ADI byte
+            uint16_t a = (u_int16_t) state->a + (uint16_t) opcode[1];
+            state->cc.z = ((a & 0xff) == 0);
+            state->cc.s = ((a & 0x80) != 0);
+            state->cc.cy = (a > 0xff);
+            state->cc.p = parity(a & 0xff, 8);
+            state->a = a & 0xff;
+        } break;
+        case 0xC9: // RET
+            state->pc = state->memory[state->sp] | (state->memory[state->sp+1] << 8);
+            state->sp += 2;
+            break;
+        case 0xCD: { // CALL address
+            uint16_t ret = state->pc+2;
+            state->memory[state->sp-1] = (ret >> 8) & 0xff;
+            state->memory[state->sp-2] = (ret & 0xff);
+            state->sp = state->sp-2;
+            state->pc = (opcode[2] << 8) | opcode[1];
+        } break;
+        case 0xE6: { // ANI
+            uint8_t x = state->a & opcode[1];
+            state->cc.z = (x == 0);
+            state->cc.s = (0x80 == (x & 0x80));
+            state->cc.p = parity(x, 8);
+            state->cc.cy = 0;
+            state->a = x;
+            state->pc++;
+        } break;
+        default:
+            UnimplementedInstruction(state);
+            break;
+    }
 }
 
 int main (int argc, char **argv) {
